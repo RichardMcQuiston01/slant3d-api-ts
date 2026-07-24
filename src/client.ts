@@ -1,5 +1,8 @@
 import { Slant3dConfigError } from "./errors.js";
 import { HttpClient } from "./http/httpClient.js";
+import { OrdersResource } from "./resources/orders.js";
+import { QuotesResource } from "./resources/quotes.js";
+import { TrackingResource } from "./resources/tracking.js";
 
 /** Options for constructing a {@link Slant3dClient}. */
 export interface Slant3dClientOptions {
@@ -24,6 +27,13 @@ export class Slant3dClient {
   /** @internal */
   protected readonly http: HttpClient;
 
+  /** Print price quotes, e.g. `client.quotes.create(...)`. */
+  readonly quotes: QuotesResource;
+  /** Order creation, e.g. `client.orders.create(...)`. */
+  readonly orders: OrdersResource;
+  /** Order status/tracking, e.g. `client.tracking.getStatus(...)`. */
+  readonly tracking: TrackingResource;
+
   constructor(options: Slant3dClientOptions = {}) {
     const apiToken = options.apiToken ?? readEnvToken();
     if (!apiToken) {
@@ -38,6 +48,10 @@ export class Slant3dClient {
       fetchImpl: options.fetch,
       timeoutMs: options.timeoutMs,
     });
+
+    this.quotes = new QuotesResource(this.http);
+    this.orders = new OrdersResource(this.http);
+    this.tracking = new TrackingResource(this.http);
   }
 }
 
