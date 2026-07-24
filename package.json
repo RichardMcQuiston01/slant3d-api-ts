@@ -1,0 +1,52 @@
+{
+  "name": "@richardmcquiston01/slant3d-api-ts",
+  "version": "0.1.0",
+  "description": "Framework-agnostic TypeScript client for Slant3D's 3D-printing-as-a-service API.",
+  "keywords": [
+    "slant3d",
+    "3d-printing",
+    "api-client",
+    "sdk"
+  ],
+  "license": "MIT",
+  "author": "Richard McQuiston",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/RichardMcQuiston01/slant3d-api-ts.git"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "engines": {
+    "bun": ">=1.1.0",
+    "node": ">=18.0.0"
+  },
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "prepublishOnly": "bun run build",
+    "typecheck": "tsc --noEmit",
+    "test": "bun test",
+    "test:file": "bun test",
+    "lint": "eslint .",
+    "lint:file": "eslint"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.17.0",
+    "@types/bun": "^1.1.14",
+    "eslint": "^9.17.0",
+    "typescript": "^5.7.2",
+    "typescript-eslint": "^8.18.1"
+  }
+}
