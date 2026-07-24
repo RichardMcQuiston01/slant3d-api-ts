@@ -11,3 +11,5 @@
   client methods where no confirmed endpoint exists.
 - README installation/quick-start docs and an accuracy caveat noting which
   endpoints are confirmed vs. best-guess placeholders.
+- GitHub Actions CI running typecheck/lint/test on PRs and pushes to
+  `dev`/`staging`/`release`/`main`.
