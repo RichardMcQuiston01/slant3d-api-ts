@@ -55,4 +55,22 @@ describe("mapHttpError", () => {
     const error = mapHttpError(500, { foo: "bar" }, "/orders");
     expect(error.message).toBe("Slant3D API request failed with status 500");
   });
+
+  it("combines message and error detail from the V2 error envelope", () => {
+    const error = mapHttpError(
+      400,
+      { success: false, message: "Validation failed", error: "zip is required" },
+      "/orders",
+    );
+    expect(error.message).toBe("Validation failed: zip is required");
+  });
+
+  it("reads a nested error.message, as returned by GET /filaments", () => {
+    const error = mapHttpError(
+      400,
+      { success: false, error: { message: "Unapproved Profile", statusCode: 400 } },
+      "/filaments",
+    );
+    expect(error.message).toBe("Unapproved Profile");
+  });
 });
