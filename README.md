@@ -143,6 +143,14 @@ time, and webhooks older than 5 minutes are rejected. Use
 `verifyWebhookSignature` directly if you want a result object instead of an
 exception.
 
+## Releasing
+
+1. Bump `version` in `package.json` and update `CHANGELOG.md`; merge to `main`.
+2. Create a GitHub release with tag `v<version>` (e.g. `v0.2.0`) targeting `main`.
+3. The `Release` workflow verifies the tag is on `main` and matches
+   `package.json`, runs typecheck/lint/test/build, then publishes to npm with
+   provenance using the `NPM_TOKEN` repo secret.
+
 ## Support
 
 If this library saved you some reverse-engineering, consider [buying me a coffee](https://www.paypal.com/ncp/payment/VDTESHTRR7684). ☕
