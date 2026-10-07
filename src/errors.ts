@@ -131,15 +131,25 @@ export function mapHttpError(
 }
 
 function extractMessage(body: unknown): string | undefined {
-  if (
-    body !== null &&
-    typeof body === "object" &&
-    "message" in body &&
-    typeof (body as { message: unknown }).message === "string"
-  ) {
-    return (body as { message: string }).message;
+  if (body === null || typeof body !== "object") {
+    return undefined;
   }
-  return undefined;
+  const { message, error } = body as { message?: unknown; error?: unknown };
+  // V2 shape: { success, message, error?: string }
+  if (typeof message === "string" && typeof error === "string") {
+    return `${message}: ${error}`;
+  }
+  if (typeof message === "string") {
+    return message;
+  }
+  // Some endpoints (e.g. GET /filaments) nest it: { error: { message } }
+  if (error !== null && typeof error === "object") {
+    const nested: unknown = (error as { message?: unknown }).message;
+    if (typeof nested === "string") {
+      return nested;
+    }
+  }
+  return typeof error === "string" ? error : undefined;
 }
 
 function parseRetryAfterMs(headers?: Headers): number | undefined {
@@ -150,3 +160,6 @@ function parseRetryAfterMs(headers?: Headers): number | undefined {
   const seconds = Number(retryAfter);
   return Number.isFinite(seconds) ? seconds * 1000 : undefined;
 }
+
+/** Thrown when a webhook signature, timestamp, or payload fails verification. */
+export class Slant3dWebhookError extends Slant3dError {}

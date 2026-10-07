@@ -12,26 +12,51 @@ export {
   Slant3dRateLimitError,
   Slant3dTimeoutError,
   Slant3dValidationError,
+  Slant3dWebhookError,
 } from "./errors.js";
 
-export { QuotesResource } from "./resources/quotes.js";
-export type {
-  CreateQuoteRequest,
-  CreateQuoteResponse,
-} from "./resources/quotes.js";
+export type * from "./types.js";
 
-export { OrdersResource } from "./resources/orders.js";
 export type {
+  CreateOrderItem,
   CreateOrderRequest,
-  CreateOrderResponse,
+  ListOrdersQuery,
+  OrderData,
 } from "./resources/orders.js";
-
-export { TrackingResource } from "./resources/tracking.js";
-export type { OrderStatus } from "./resources/tracking.js";
-
-export type { FilamentColor } from "./resources/filaments.js";
-
 export type {
-  Slant3dWebhookEvent,
-  Slant3dWebhookEventType,
-} from "./webhooks/types.js";
+  EstimateOptions,
+  FileEstimate,
+  FileListOptions,
+  FileSortField,
+  ListFilesQuery,
+  RequestUploadData,
+  RequestUploadRequest,
+  UploadFileRequest,
+} from "./resources/files.js";
+export type {
+  CreatePlatformRequest,
+  DeadWebhook,
+  DeadWebhookResendResult,
+  DeadWebhookResendSummary,
+  DeadWebhookStatus,
+  UpdatePlatformRequest,
+  WebhookDeliveryResult,
+} from "./resources/platforms.js";
+export type {
+  FilamentListResponse,
+  ListFilamentsQuery,
+} from "./resources/catalog.js";
+
+export type * from "./webhooks/types.js";
+export {
+  constructWebhookEvent,
+  DEFAULT_WEBHOOK_TOLERANCE_MS,
+  verifyWebhookSignature,
+  WEBHOOK_SIGNATURE_HEADER,
+  WEBHOOK_TIMESTAMP_HEADER,
+} from "./webhooks/verify.js";
+export type {
+  ConstructWebhookEventOptions,
+  VerifyWebhookOptions,
+  WebhookVerificationResult,
+} from "./webhooks/verify.js";
