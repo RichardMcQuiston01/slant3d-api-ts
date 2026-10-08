@@ -48,10 +48,11 @@
 
 - `account.listApiKeys` / `account.createApiKey` only work with a session
   cookie per the spec; with Bearer auth they return 401.
-- `DELETE /files/{id}` returned 403 "Admin access required" for a `free`
-  role account deleting its own file, although the spec only requires the
-  creator. The live upload test therefore reuses one test file instead of
-  deleting after each run.
+- `PATCH /files/{id}` and `DELETE /files/{id}` returned 403 "Admin access
+  required" for a `free` role account acting on its own file, although the
+  spec only requires the creator (and lists no 403 for `PATCH`). The live
+  upload test therefore warns on those 403s and reuses one test file instead
+  of deleting after each run.
 - Platform `webhookURL` is `""` (not omitted) when unset.
 - `GET /filaments` returns `imageURL: ""` instead of omitting it when a
   filament has no image.

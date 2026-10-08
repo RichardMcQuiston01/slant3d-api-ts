@@ -73,25 +73,23 @@ endsolid contract
 let validator: SpecResponseValidator;
 
 /**
- * Deletes a file this run uploaded. A 403 (non-admin role) is expected on some
- * accounts and only warns; any other failure is recorded on the checker so it
- * cannot mask an earlier error.
+ * Runs a call that accounts below the admin role cannot make. A 403 only
+ * warns and returns `undefined`; any other failure propagates.
  */
-async function deleteTestFile(
-  client: Slant3dClient,
-  fileId: string,
-  checker: ContractChecker,
-): Promise<void> {
+async function tryAdminOnly<T>(
+  label: string,
+  run: () => Promise<T>,
+): Promise<T | undefined> {
   try {
-    checker.check("DELETE /files/{}", await client.files.delete(fileId));
+    return await run();
   } catch (error) {
     if (error instanceof Slant3dAuthorizationError) {
       console.warn(
-        `could not delete test file ${fileId} (${error.message}); it is left in place and will be reused by the next run`,
+        `${label} needs the admin role (${error.message}); skipped for this account`,
       );
-    } else {
-      checker.fail(`DELETE /files/{} failed: ${String(error)}`);
+      return undefined;
     }
+    throw error;
   }
 }
 
@@ -332,12 +330,13 @@ describe.skipIf(!LIVE_ENABLED || API_TOKEN === undefined)(
 describe.skipIf(
   !LIVE_ENABLED || API_TOKEN === undefined || WRITE_PLATFORM_ID === undefined,
 )("live contract: file upload round trip (writes)", () => {
-  // Accounts below the admin role get 403 "Admin access required" on
-  // DELETE /files/{id}, so test files cannot always be cleaned up. To avoid
+  // Accounts on the free role get 403 "Admin access required" on both
+  // PATCH and DELETE /files/{id}, so test files cannot be reassigned or cleaned
+  // up there. To avoid
   // piling up files, one earlier test file is reused unless
   // SLANT3D_LIVE_FORCE_UPLOAD=1 forces a fresh upload.
   test(
-    "upload (or reuse), get, estimate, reassign, and delete when permitted",
+    "upload (or reuse), get, estimate, then reassign and delete when permitted",
     async () => {
       validator = new SpecResponseValidator(
         await loadSpec(process.env.SLANT3D_SPEC_SOURCE ?? DEFAULT_SPEC_URL),
@@ -375,14 +374,26 @@ describe.skipIf(
           "POST /files/{}/estimate",
           await client.files.estimate(fileId),
         );
-        checker.check(
-          "PATCH /files/{}",
-          await client.files.updateOwner(fileId, "contract-test-owner"),
+        const reassigned = await tryAdminOnly("PATCH /files/{id}", () =>
+          client.files.updateOwner(fileId, "contract-test-owner"),
         );
+        if (reassigned !== undefined) {
+          checker.check("PATCH /files/{}", reassigned);
+        }
       } finally {
-        // Reused files stay in place for the next run.
+        // Reused files stay in place for the next run. Cleanup problems are
+        // recorded instead of thrown so they cannot mask an earlier error.
         if (uploadedThisRun) {
-          await deleteTestFile(client, fileId, checker);
+          try {
+            const removed = await tryAdminOnly("DELETE /files/{id}", () =>
+              client.files.delete(fileId),
+            );
+            if (removed !== undefined) {
+              checker.check("DELETE /files/{}", removed);
+            }
+          } catch (error) {
+            checker.fail(`DELETE /files/{} failed: ${String(error)}`);
+          }
         }
       }
       checker.assertConforms();

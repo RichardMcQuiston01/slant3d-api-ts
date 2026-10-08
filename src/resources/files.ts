@@ -106,7 +106,12 @@ export class FilesResource {
     return this.http.request("POST", "files/batch", { body: { publicIds } });
   }
 
-  /** `PATCH /files/{publicFileId}`: reassign the file to another owner id. */
+  /**
+   * `PATCH /files/{publicFileId}`: reassign the file to another owner id. The
+   * spec allows the file creator or an admin, but a `free` role account was
+   * observed getting 403 "Admin access required" for its own file
+   * (`Slant3dAuthorizationError`); the spec lists no 403 here.
+   */
   updateOwner(
     publicFileId: string,
     ownerId: string,
