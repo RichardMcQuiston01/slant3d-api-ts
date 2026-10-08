@@ -252,12 +252,25 @@ describe.skipIf(!LIVE_ENABLED || API_TOKEN === undefined)(
     );
 
     test(
-      "usage and API key listing",
+      "usage matches the spec",
       async () => {
         const checker = new ContractChecker();
         checker.check("GET /usage", await client.account.getUsage());
-        checker.check("GET /apiKey", await client.account.listApiKeys());
         checker.assertConforms();
+      },
+      TIMEOUT_MS,
+    );
+
+    test(
+      "API key listing is session-only, so a Bearer key gets a 401",
+      async () => {
+        // The spec lists only SessionAuth (cookie) for /apiKey. If this ever
+        // succeeds, the API now accepts Bearer keys: update the docs on
+        // AccountResource and replace this test with a schema check.
+        const error: unknown = await client.account
+          .listApiKeys()
+          .catch((e: unknown) => e);
+        expect(error).toBeInstanceOf(Slant3dAuthenticationError);
       },
       TIMEOUT_MS,
     );

@@ -208,6 +208,7 @@ export interface Filament {
   color: string;
   /** Six digit lower case hex, e.g. `#a1a1a1`. */
   hexValue: string;
+  /** Omitted per the spec when there is no image, but the API sends `""`. */
   imageURL?: string;
   available?: boolean;
 }

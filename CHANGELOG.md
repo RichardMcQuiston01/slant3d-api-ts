@@ -43,3 +43,10 @@
   needs `SLANT3D_LIVE_WRITE=1` and `SLANT3D_LIVE_PLATFORM_ID`. No orders are
   created. Known, harmless differences between the live API and the spec are
   listed in `contract/knownDeviations.ts` and reported as warnings.
+
+### Documented
+
+- `account.listApiKeys` / `account.createApiKey` only work with a session
+  cookie per the spec; with Bearer auth they return 401.
+- `GET /filaments` returns `imageURL: ""` instead of omitting it when a
+  filament has no image.
