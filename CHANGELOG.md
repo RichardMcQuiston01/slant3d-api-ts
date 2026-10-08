@@ -28,9 +28,7 @@
 
 - `.env.example` now uses `SLANT3D_API_TOKEN`, matching what the client reads.
 
-## Unreleased
-
-### Added
+### Added (contract tooling)
 
 - `bun run spec:diff`: compares every client operation (method, path, query
   parameters, body properties) with the live OpenAPI spec and exits non-zero
