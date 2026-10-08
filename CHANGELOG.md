@@ -32,12 +32,13 @@
 
 ### Added
 
-- Initial `Slant3dClient` v1: quotes/pricing, order creation, and order
-  tracking sub-clients, backed by a shared `HttpClient` with typed error
-  classes and no automatic retries (order creation is non-idempotent).
-- `FilamentColor` and Slant3D webhook payload types for consumers, without
-  client methods where no confirmed endpoint exists.
-- README installation/quick-start docs and an accuracy caveat noting which
-  endpoints are confirmed vs. best-guess placeholders.
-- GitHub Actions CI running typecheck/lint/test on PRs and pushes to
-  `dev`/`staging`/`release`/`main`.
+- `bun run spec:diff`: compares every client operation (method, path, query
+  parameters, body properties) with the live OpenAPI spec and exits non-zero
+  on drift. Also runs weekly in the `Spec drift` workflow.
+- Offline contract tests in `contract/` covering the diff logic, client
+  operation coverage, and response validation against spec schemas.
+- Opt-in live contract tests (`bun run test:live`) that validate real API
+  responses against the spec. Public and error-path checks need no key;
+  read-only checks need `SLANT3D_API_TOKEN`; a file upload round trip also
+  needs `SLANT3D_LIVE_WRITE=1` and `SLANT3D_LIVE_PLATFORM_ID`. No orders are
+  created.

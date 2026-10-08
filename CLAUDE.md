@@ -14,5 +14,6 @@ Client for the Slant3D **V2** API (`https://slant3dapi.com/v2/api/`). The spec i
 - `src/resources/*`: one class per API area, exposed on `Slant3dClient`
 - `src/webhooks/*`: webhook payload types and signature verification
 - Tests mock `fetch` via `src/testing/mockFetch.ts`
+- `contract/*`: spec-drift tooling, not shipped in the package. `bun run spec:diff [url-or-file]` diffs the client against the OpenAPI spec; a new resource method must also get an entry in `contract/clientOperations.ts` (a test enforces this). `bun run test:live` runs opt-in live API checks (see the header of `contract/live.test.ts` for env vars).
 
 Use `bun` rather than `npm`. Commands: `bun run typecheck`, `bun run lint`, `bun test`, `bun run build`. Follow the user's `typescript-style` conventions.

@@ -2,164 +2,33 @@
 
 ## Overview
 
-Framework agnostic TypeScript client for the [Slant3D V2 API](https://slant3dapi.com/documentation/introduction).
-Types follow the official OpenAPI spec, published at
-`https://slant3dapi.com/v2/api/openapi.json`. Zero runtime dependencies;
-uses the platform `fetch` and Web Crypto (Node 18+, Bun, Deno, edge).
+Slant 3D runs a big 3D printing farm. You send them a 3D model file, and they
+print it, pack it, and ship it to your customer. Slant 3D also has an API,
+which is a way for computer programs to talk to their service.
 
-> Response and request property names match the wire format exactly, which
-> mixes camelCase and snake_case (e.g. `public_ids`, `event_type`).
+This package lets your own code use that API. You do not have to write the
+web requests yourself.
 
-## Installation
+With it, your code can:
 
-```sh
-npm install @richardmcquiston01/slant3d-api-ts
-# or
-bun add @richardmcquiston01/slant3d-api-ts
-```
+- upload 3D model files and see a price before you buy
+- place orders and check on them
+- get a message when an order ships
+- look up the materials, colors, and parts you can order
 
-## Quick Start
+The package takes care of signing in, retrying when the network hiccups, and
+turning errors into clear messages. It also describes the shape of every piece
+of data, so your code editor can catch mistakes before you run anything.
 
-Order workflow: upload files, create a draft order, then process it.
-Status changes arrive by webhook.
+It is written in TypeScript. It works in Node.js, Bun, Deno, and other places
+that run JavaScript. It does not need any other packages to work.
 
-```ts
-import { readFile } from "node:fs/promises";
-import { Slant3dClient } from "@richardmcquiston01/slant3d-api-ts";
+This is an unofficial package. It is not made by Slant 3D.
 
-// Reads SLANT3D_API_TOKEN when apiToken is omitted.
-const client = new Slant3dClient({ apiToken: process.env.SLANT3D_API_TOKEN });
+## Getting Started
 
-const platformId = "your-platform-id"; // see client.platforms.list()
-
-// 1. Upload (presigned URL + PUT + confirm in one call)
-const file = await client.files.upload({
-  name: "part.stl",
-  platformId,
-  data: await readFile("part.stl"),
-});
-const publicFileServiceId = file.data.publicFileServiceId;
-
-// Optional: price estimate
-const estimate = await client.files.estimate(publicFileServiceId, {
-  quantity: 2,
-});
-console.log(estimate.data.total);
-
-// 2. Draft order (nothing charged yet)
-const draft = await client.orders.createDraft({
-  platformId,
-  customer: {
-    details: {
-      email: "ada@example.com",
-      address: {
-        name: "Ada Lovelace",
-        line1: "1 Main St",
-        city: "Austin",
-        state: "TX",
-        zip: "78701",
-      },
-    },
-  },
-  items: [{ type: "PRINT", publicFileServiceId, quantity: 2 }],
-});
-
-// 3. Process: charges payment and starts production
-const order = await client.orders.process(draft.data.order.publicId);
-```
-
-### Resources
-
-| Client property       | Endpoints                                                              |
-| --------------------- | ---------------------------------------------------------------------- |
-| `client.files`        | list, get, batch, upload, delete, estimate, OpenSCAD to STL            |
-| `client.orders`       | list, search, get, batch, createDraft, process, cancel                 |
-| `client.platforms`    | CRUD, enable/disable, webhook secret, test/dead webhooks, Stripe key   |
-| `client.components`   | list, search, categories, get                                          |
-| `client.filaments`    | list (filter by `profile` / `color`)                                   |
-| `client.stationery`   | list                                                                   |
-| `client.account`      | usage, API keys                                                        |
-| `client.health`       | service health                                                         |
-
-Every method returns the API's `{ success, message, data }` envelope, plus
-`count` or `pagination` where the endpoint provides them.
-
-### Error handling
-
-Non-2xx responses throw typed errors, all extending `Slant3dApiError`
-(`.status`, `.requestPath`, `.responseBody`):
-
-```ts
-import {
-  Slant3dNotFoundError,
-  Slant3dRateLimitError,
-} from "@richardmcquiston01/slant3d-api-ts";
-
-try {
-  await client.orders.get("SLANT_0000000000");
-} catch (error) {
-  if (error instanceof Slant3dNotFoundError) {
-    /* ... */
-  } else if (error instanceof Slant3dRateLimitError) {
-    console.log(`retry in ${error.retryAfterMs}ms`);
-  } else {
-    throw error;
-  }
-}
-```
-
-Network and timeout failures throw `Slant3dNetworkError` /
-`Slant3dTimeoutError`. The API allows 100 requests per minute.
-
-### Retries
-
-`GET` requests are retried (default 2 times, exponential backoff, honoring
-`Retry-After`) on network errors, timeouts, 429 and 500/502/503/504.
-Non-`GET` requests are **never** retried, since creating and processing
-orders is not idempotent. Tune with `maxRetries` / `retryBaseDelayMs`.
-
-### Webhooks
-
-Verify and parse a webhook with the platform's `webhookSecret`. Pass the
-**raw** request body, not re-serialized JSON:
-
-```ts
-import { constructWebhookEvent } from "@richardmcquiston01/slant3d-api-ts";
-
-// e.g. an Express handler using express.raw({ type: "application/json" })
-const event = await constructWebhookEvent({
-  payload: req.body.toString(),
-  headers: req.headers,
-  secret: process.env.SLANT3D_WEBHOOK_SECRET!,
-});
-
-if (event.event_type === "order.shipped") {
-  console.log(event.data.order.tracking_number);
-}
-```
-
-Signatures are HMAC-SHA256 over `"<timestamp>.<body>"`, checked in constant
-time, and webhooks older than 5 minutes are rejected. Use
-`verifyWebhookSignature` directly if you want a result object instead of an
-exception.
-
-## Releasing
-
-1. Bump `version` in `package.json` and update `CHANGELOG.md`; merge to `main`.
-2. Create a GitHub release with tag `v<version>` (e.g. `v0.2.0`) targeting `main`.
-3. The `Release` workflow verifies the tag is on `main` and matches
-   `package.json`, runs typecheck/lint/test/build, then publishes to npm with
-   provenance using the `NPM_TOKEN` repo secret.
-
-## Support
-
-If this library saved you some reverse-engineering, consider [buying me a coffee](https://www.paypal.com/ncp/payment/VDTESHTRR7684). ☕
-
-## Resources
-
-- <https://www.slant3d.com/slant-3d-printing-api>
-- <https://www.slant3dapi.com/documentation/introduction>
-- <https://slant3dapi.com/v2/api/openapi.json>
+See [GETTING_STARTED.md](./GETTING_STARTED.md) for installation, setup, and
+examples.
 
 ## License
 
@@ -168,3 +37,11 @@ MIT
 ## Copyright
 
 Copyright (c)2026 Richard McQuiston
+
+## Buy Me a Coffee
+
+If this app, code, or repository has helped you or someone you know, please consider donating. I appreciate any help to offset the costs of development and/or AI Credits.
+
+[**Donate via Stripe**](https://donate.stripe.com/00w5kD3Gj1Xo9v7gVOcs800), or scan:
+
+[![Donate via Stripe](./donate.svg)](https://donate.stripe.com/00w5kD3Gj1Xo9v7gVOcs800)
