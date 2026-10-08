@@ -1,0 +1,28 @@
+name: Spec drift
+
+# Detects when the Slant3D V2 API changes underneath the client. Kept out of
+# the PR workflow so a Slant3D outage or spec edit cannot block unrelated work.
+on:
+  schedule:
+    - cron: "17 6 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  spec-diff:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+      - run: bun install --frozen-lockfile
+      - name: Compare client with the live OpenAPI spec
+        run: bun run spec:diff
+      - name: Live contract tests
+        run: bun run test:live
+        env:
+          # Optional: without this secret only the public checks run.
+          SLANT3D_API_TOKEN: ${{ secrets.SLANT3D_API_TOKEN }}
