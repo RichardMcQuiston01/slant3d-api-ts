@@ -30,7 +30,7 @@ export const KNOWN_DEVIATIONS: readonly KnownDeviation[] = [
   {
     id: "uri-format",
     reason:
-      "Image URL fields are not always strict RFC 3986 URIs: component imageUrl values contain unencoded spaces, and filament imageURL is \"\" (not omitted) when there is no image. The client treats them as plain strings.",
+      "Image URL fields are not always strict RFC 3986 URIs: component imageUrl values contain unencoded spaces, filament imageURL is \"\" (not omitted) when there is no image, and platform webhookURL is \"\" when unset. The client treats them as plain strings.",
     matches: (error: DeviationCandidate): boolean =>
       error.keyword === "format" && error.params.format === "uri",
   },

@@ -7,7 +7,9 @@
  *   SLANT3D_LIVE_TESTS=1                      public + error-path checks
  *   SLANT3D_LIVE_TESTS=1 SLANT3D_API_TOKEN=…  adds read-only authenticated checks
  *   … SLANT3D_LIVE_WRITE=1 SLANT3D_LIVE_PLATFORM_ID=<uuid>
- *                                             adds file upload/estimate/delete
+ *                                             adds file upload/estimate/reassign
+ *                                             (SLANT3D_LIVE_FORCE_UPLOAD=1 uploads a
+ *                                             fresh file instead of reusing one)
  *
  * Optional: `SLANT3D_SPEC_SOURCE` points at a local spec file or alternate URL.
  * The write checks only create and delete one tiny file on the platform you
@@ -17,6 +19,7 @@ import { beforeAll, describe, expect, test } from "bun:test";
 import {
   Slant3dApiError,
   Slant3dAuthenticationError,
+  Slant3dAuthorizationError,
   Slant3dClient,
   Slant3dNotFoundError,
 } from "../src/index.js";
@@ -30,6 +33,8 @@ const WRITE_PLATFORM_ID: string | undefined =
     ? process.env.SLANT3D_LIVE_PLATFORM_ID || undefined
     : undefined;
 const TIMEOUT_MS: number = 30_000;
+/** Name prefix of the file the write test uploads and later reuses. */
+const TEST_FILE_PREFIX: string = "contract-test-";
 const MISSING_UUID: string = "00000000-0000-4000-8000-000000000000";
 
 /** Smallest valid ASCII STL: a single tetrahedron. */
@@ -68,6 +73,29 @@ endsolid contract
 let validator: SpecResponseValidator;
 
 /**
+ * Deletes a file this run uploaded. A 403 (non-admin role) is expected on some
+ * accounts and only warns; any other failure is recorded on the checker so it
+ * cannot mask an earlier error.
+ */
+async function deleteTestFile(
+  client: Slant3dClient,
+  fileId: string,
+  checker: ContractChecker,
+): Promise<void> {
+  try {
+    checker.check("DELETE /files/{}", await client.files.delete(fileId));
+  } catch (error) {
+    if (error instanceof Slant3dAuthorizationError) {
+      console.warn(
+        `could not delete test file ${fileId} (${error.message}); it is left in place and will be reused by the next run`,
+      );
+    } else {
+      checker.fail(`DELETE /files/{} failed: ${String(error)}`);
+    }
+  }
+}
+
+/**
  * Collects every spec mismatch in a test and asserts once at the end, so a
  * single run reports all failing endpoints instead of stopping at the first.
  * Known, tolerated deviations are printed once as warnings.
@@ -87,6 +115,10 @@ class ContractChecker {
         console.warn(`known spec deviation, ignored: ${warning}`);
       }
     }
+  }
+
+  fail(problem: string): void {
+    this.problems.push(problem);
   }
 
   assertConforms(): void {
@@ -300,23 +332,42 @@ describe.skipIf(!LIVE_ENABLED || API_TOKEN === undefined)(
 describe.skipIf(
   !LIVE_ENABLED || API_TOKEN === undefined || WRITE_PLATFORM_ID === undefined,
 )("live contract: file upload round trip (writes)", () => {
+  // Accounts below the admin role get 403 "Admin access required" on
+  // DELETE /files/{id}, so test files cannot always be cleaned up. To avoid
+  // piling up files, one earlier test file is reused unless
+  // SLANT3D_LIVE_FORCE_UPLOAD=1 forces a fresh upload.
   test(
-    "upload, get, estimate, reassign and delete a file",
+    "upload (or reuse), get, estimate, reassign, and delete when permitted",
     async () => {
       validator = new SpecResponseValidator(
         await loadSpec(process.env.SLANT3D_SPEC_SOURCE ?? DEFAULT_SPEC_URL),
       );
       const client = new Slant3dClient({ apiToken: API_TOKEN });
       const platformId = WRITE_PLATFORM_ID as string;
-
-      const uploaded = await client.files.upload({
-        name: `contract-test-${Date.now()}.stl`,
-        platformId,
-        data: new TextEncoder().encode(TETRAHEDRON_STL),
-      });
       const checker = new ContractChecker();
-      checker.check("POST /files/confirm-upload", uploaded);
-      const fileId: string = uploaded.data.publicFileServiceId;
+
+      const existing =
+        process.env.SLANT3D_LIVE_FORCE_UPLOAD === "1"
+          ? undefined
+          : (
+              await client.files.listByPlatform(platformId, { limit: 200 })
+            ).data.find((file) => file.name.startsWith(TEST_FILE_PREFIX));
+
+      let fileId: string;
+      let uploadedThisRun: boolean;
+      if (existing !== undefined) {
+        fileId = existing.publicFileServiceId;
+        uploadedThisRun = false;
+      } else {
+        const uploaded = await client.files.upload({
+          name: `${TEST_FILE_PREFIX}${Date.now()}.stl`,
+          platformId,
+          data: new TextEncoder().encode(TETRAHEDRON_STL),
+        });
+        checker.check("POST /files/confirm-upload", uploaded);
+        fileId = uploaded.data.publicFileServiceId;
+        uploadedThisRun = true;
+      }
 
       try {
         checker.check("GET /files/{}", await client.files.get(fileId));
@@ -329,7 +380,10 @@ describe.skipIf(
           await client.files.updateOwner(fileId, "contract-test-owner"),
         );
       } finally {
-        checker.check("DELETE /files/{}", await client.files.delete(fileId));
+        // Reused files stay in place for the next run.
+        if (uploadedThisRun) {
+          await deleteTestFile(client, fileId, checker);
+        }
       }
       checker.assertConforms();
     },

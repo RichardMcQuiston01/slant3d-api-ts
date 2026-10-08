@@ -116,7 +116,12 @@ export class FilesResource {
     });
   }
 
-  /** `DELETE /files/{publicFileId}` */
+  /**
+   * `DELETE /files/{publicFileId}`. The spec says only the file creator may
+   * delete, but accounts with a non-admin role (e.g. `free`) were observed
+   * getting 403 "Admin access required" even for their own files, which
+   * surfaces as `Slant3dAuthorizationError`.
+   */
   delete(publicFileId: string): Promise<ApiResponse<undefined>> {
     return this.http.request("DELETE", `files/${encodeURIComponent(publicFileId)}`);
   }
