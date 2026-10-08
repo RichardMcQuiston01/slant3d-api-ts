@@ -1,3 +1,4 @@
+import type { Slant3dValidationError } from "../errors.js";
 import type { HttpClient } from "../http/httpClient.js";
 import type {
   ApiResponse,
@@ -65,7 +66,11 @@ export class OrdersResource {
     return this.http.request("GET", "orders", { query: { ...query } });
   }
 
-  /** `GET /orders/search` */
+  /**
+   * `GET /orders/search`. When nothing matches, the API responds 400 ("Order
+   * not found."), which surfaces as a {@link Slant3dValidationError} rather
+   * than an empty list.
+   */
   search(query: string): Promise<ApiResponse<Order[]>> {
     return this.http.request("GET", "orders/search", { query: { query } });
   }

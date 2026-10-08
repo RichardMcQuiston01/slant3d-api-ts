@@ -41,4 +41,5 @@
   responses against the spec. Public and error-path checks need no key;
   read-only checks need `SLANT3D_API_TOKEN`; a file upload round trip also
   needs `SLANT3D_LIVE_WRITE=1` and `SLANT3D_LIVE_PLATFORM_ID`. No orders are
-  created.
+  created. Known, harmless differences between the live API and the spec are
+  listed in `contract/knownDeviations.ts` and reported as warnings.

@@ -15,6 +15,7 @@
  */
 import { beforeAll, describe, expect, test } from "bun:test";
 import {
+  Slant3dApiError,
   Slant3dAuthenticationError,
   Slant3dClient,
   Slant3dNotFoundError,
@@ -66,10 +67,34 @@ endsolid contract
 
 let validator: SpecResponseValidator;
 
-function expectConforms(operationKey: string, body: unknown): void {
-  const result = validator.validate(operationKey, body);
-  expect(result.errors, `${operationKey} response vs spec`).toEqual([]);
+/**
+ * Collects every spec mismatch in a test and asserts once at the end, so a
+ * single run reports all failing endpoints instead of stopping at the first.
+ * Known, tolerated deviations are printed once as warnings.
+ */
+class ContractChecker {
+  private readonly problems: string[] = [];
+
+  check(operationKey: string, body: unknown): void {
+    const result = validator.validate(operationKey, body);
+    for (const error of result.errors) {
+      this.problems.push(`${operationKey}: ${error}`);
+    }
+    for (const note of result.ignored) {
+      const warning: string = `${operationKey}: ${note}`;
+      if (!WARNED.has(warning)) {
+        WARNED.add(warning);
+        console.warn(`known spec deviation, ignored: ${warning}`);
+      }
+    }
+  }
+
+  assertConforms(): void {
+    expect(this.problems, "responses that do not match the spec").toEqual([]);
+  }
 }
+
+const WARNED = new Set<string>();
 
 describe.skipIf(!LIVE_ENABLED)("live contract: public and error paths", () => {
   beforeAll(async () => {
@@ -83,7 +108,9 @@ describe.skipIf(!LIVE_ENABLED)("live contract: public and error paths", () => {
     async () => {
       const client = new Slant3dClient({ apiToken: "sl-contract-unused" });
       const response = await client.health.status();
-      expectConforms("GET /health/status", response);
+      const checker = new ContractChecker();
+      checker.check("GET /health/status", response);
+      checker.assertConforms();
       expect(Object.keys(response.data).length).toBeGreaterThan(0);
     },
     TIMEOUT_MS,
@@ -118,17 +145,19 @@ describe.skipIf(!LIVE_ENABLED || API_TOKEN === undefined)(
     test(
       "components list, categories, search and get",
       async () => {
+        const checker = new ContractChecker();
         const list = await client.components.list();
-        expectConforms("GET /components", list);
-        expectConforms(
+        checker.check("GET /components", list);
+        checker.check(
           "GET /components/categories",
           await client.components.listCategories(),
         );
-        expectConforms("GET /components/search", await client.components.search("a"));
+        checker.check("GET /components/search", await client.components.search("a"));
         const first = list.data[0];
         if (first !== undefined) {
-          expectConforms("GET /components/{}", await client.components.get(first.id));
+          checker.check("GET /components/{}", await client.components.get(first.id));
         }
+        checker.assertConforms();
       },
       TIMEOUT_MS,
     );
@@ -136,9 +165,11 @@ describe.skipIf(!LIVE_ENABLED || API_TOKEN === undefined)(
     test(
       "filaments list, unfiltered and filtered by profile",
       async () => {
-        expectConforms("GET /filaments", await client.filaments.list());
+        const checker = new ContractChecker();
+        checker.check("GET /filaments", await client.filaments.list());
         const filtered = await client.filaments.list({ profile: ["PLA"] });
-        expectConforms("GET /filaments", filtered);
+        checker.check("GET /filaments", filtered);
+        checker.assertConforms();
         for (const filament of filtered.data) {
           expect(filament.profile).toBe("PLA");
         }
@@ -149,7 +180,9 @@ describe.skipIf(!LIVE_ENABLED || API_TOKEN === undefined)(
     test(
       "stationery list",
       async () => {
-        expectConforms("GET /stationery", await client.stationery.list());
+        const checker = new ContractChecker();
+        checker.check("GET /stationery", await client.stationery.list());
+        checker.assertConforms();
       },
       TIMEOUT_MS,
     );
@@ -157,15 +190,14 @@ describe.skipIf(!LIVE_ENABLED || API_TOKEN === undefined)(
     test(
       "platforms list and get",
       async () => {
+        const checker = new ContractChecker();
         const list = await client.platforms.list();
-        expectConforms("GET /platforms", list);
+        checker.check("GET /platforms", list);
         const first = list.data[0];
         if (first !== undefined) {
-          expectConforms(
-            "GET /platforms/{}",
-            await client.platforms.get(first.id),
-          );
+          checker.check("GET /platforms/{}", await client.platforms.get(first.id));
         }
+        checker.assertConforms();
       },
       TIMEOUT_MS,
     );
@@ -173,8 +205,10 @@ describe.skipIf(!LIVE_ENABLED || API_TOKEN === undefined)(
     test(
       "files list honors pagination",
       async () => {
+        const checker = new ContractChecker();
         const page = await client.files.list({ page: 1, limit: 1 });
-        expectConforms("GET /files", page);
+        checker.check("GET /files", page);
+        checker.assertConforms();
         expect(page.data.length).toBeLessThanOrEqual(1);
         expect(page.pagination.limit).toBe(1);
         expect(page.pagination.page).toBe(1);
@@ -185,12 +219,33 @@ describe.skipIf(!LIVE_ENABLED || API_TOKEN === undefined)(
     test(
       "orders list, search and get",
       async () => {
+        const checker = new ContractChecker();
         const page = await client.orders.list({ limit: 1 });
-        expectConforms("GET /orders", page);
-        expectConforms("GET /orders/search", await client.orders.search("test"));
+        checker.check("GET /orders", page);
         const first = page.data[0];
         if (first !== undefined) {
-          expectConforms("GET /orders/{}", await client.orders.get(first.publicId));
+          checker.check("GET /orders/{}", await client.orders.get(first.publicId));
+          checker.check(
+            "GET /orders/search",
+            await client.orders.search(first.publicId),
+          );
+        }
+        checker.assertConforms();
+      },
+      TIMEOUT_MS,
+    );
+
+    test(
+      "an order search with no matches is a 400/404 error or an empty list",
+      async () => {
+        // The API answers 400 "Order not found." instead of an empty list.
+        const outcome: unknown = await client.orders
+          .search("SLANT_NO_SUCH_ORDER_0000")
+          .catch((e: unknown) => e);
+        if (outcome instanceof Slant3dApiError) {
+          expect([400, 404]).toContain(outcome.status);
+        } else {
+          expect((outcome as { data: unknown[] }).data).toEqual([]);
         }
       },
       TIMEOUT_MS,
@@ -199,8 +254,10 @@ describe.skipIf(!LIVE_ENABLED || API_TOKEN === undefined)(
     test(
       "usage and API key listing",
       async () => {
-        expectConforms("GET /usage", await client.account.getUsage());
-        expectConforms("GET /apiKey", await client.account.listApiKeys());
+        const checker = new ContractChecker();
+        checker.check("GET /usage", await client.account.getUsage());
+        checker.check("GET /apiKey", await client.account.listApiKeys());
+        checker.assertConforms();
       },
       TIMEOUT_MS,
     );
@@ -244,23 +301,24 @@ describe.skipIf(
         platformId,
         data: new TextEncoder().encode(TETRAHEDRON_STL),
       });
-      expectConforms("POST /files/confirm-upload", uploaded);
+      const checker = new ContractChecker();
+      checker.check("POST /files/confirm-upload", uploaded);
       const fileId: string = uploaded.data.publicFileServiceId;
 
       try {
-        expectConforms("GET /files/{}", await client.files.get(fileId));
-        expectConforms(
+        checker.check("GET /files/{}", await client.files.get(fileId));
+        checker.check(
           "POST /files/{}/estimate",
           await client.files.estimate(fileId),
         );
-        expectConforms(
+        checker.check(
           "PATCH /files/{}",
           await client.files.updateOwner(fileId, "contract-test-owner"),
         );
       } finally {
-        const removed = await client.files.delete(fileId);
-        expectConforms("DELETE /files/{}", removed);
+        checker.check("DELETE /files/{}", await client.files.delete(fileId));
       }
+      checker.assertConforms();
     },
     120_000,
   );
