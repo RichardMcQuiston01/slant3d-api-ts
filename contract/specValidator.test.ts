@@ -57,7 +57,7 @@ describe("SpecResponseValidator", () => {
       success: true,
       data: { id: UUID, note: null },
     });
-    expect(result).toEqual({ valid: true, errors: [] });
+    expect(result).toEqual({ valid: true, errors: [], ignored: [] });
   });
 
   test("describes where a body deviates from the schema", () => {
@@ -68,6 +68,33 @@ describe("SpecResponseValidator", () => {
     expect(result.valid).toBe(false);
     expect(result.errors.join("\n")).toContain("/success");
     expect(result.errors.join("\n")).toContain("/data/id");
+  });
+
+  test("tolerates a missing message and non-uri URL strings", () => {
+    const lenient = new SpecResponseValidator({
+      ...SPEC,
+      components: {
+        schemas: {
+          ApiResponse: {
+            type: "object",
+            required: ["success", "message"],
+            properties: { success: { type: "boolean" } },
+          },
+          Widget: {
+            type: "object",
+            properties: { imageUrl: { type: "string", format: "uri" } },
+          },
+        },
+      },
+    } as unknown as OpenApiDocument);
+    const result = lenient.validate("GET /widgets/{}", {
+      success: true,
+      data: { imageUrl: "not a uri" },
+    });
+    expect(result.valid).toBe(true);
+    expect(result.ignored.join("\n")).toContain("[missing-message]");
+    expect(result.ignored.join("\n")).toContain('[uri-format]');
+    expect(result.ignored.join("\n")).toContain("not a uri");
   });
 
   test("rejects an operation the spec does not define", () => {

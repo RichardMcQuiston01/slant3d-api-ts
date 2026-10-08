@@ -1,5 +1,6 @@
-import { Ajv, type ValidateFunction } from "ajv";
+import { Ajv, type ErrorObject, type ValidateFunction } from "ajv";
 import addFormatsModule from "ajv-formats";
+import { KNOWN_DEVIATIONS } from "./knownDeviations.js";
 import {
   extractOperations,
   type OpenApiDocument,
@@ -17,6 +18,8 @@ export interface ValidationResult {
   valid: boolean;
   /** Human-readable problems; empty when `valid` is true. */
   errors: string[];
+  /** Known, tolerated deviations (see `knownDeviations.ts`), with values. */
+  ignored: string[];
 }
 
 /**
@@ -34,6 +37,7 @@ export class SpecResponseValidator {
       strict: false,
       allErrors: true,
       validateSchema: false,
+      verbose: true,
       logger: false,
     });
     addFormats(this.ajv);
@@ -44,10 +48,14 @@ export class SpecResponseValidator {
   validate(operationKey: string, body: unknown): ValidationResult {
     const operation: SpecOperation | undefined = this.operations.get(operationKey);
     if (operation === undefined) {
-      return { valid: false, errors: [`No spec operation "${operationKey}"`] };
+      return {
+        valid: false,
+        errors: [`No spec operation "${operationKey}"`],
+        ignored: [],
+      };
     }
     if (operation.responseSchemaPointer === undefined) {
-      return { valid: true, errors: [] };
+      return { valid: true, errors: [], ignored: [] };
     }
 
     let validator: ValidateFunction | undefined = this.compiled.get(operationKey);
@@ -58,13 +66,30 @@ export class SpecResponseValidator {
       this.compiled.set(operationKey, validator);
     }
     if (validator(body)) {
-      return { valid: true, errors: [] };
+      return { valid: true, errors: [], ignored: [] };
     }
-    return {
-      valid: false,
-      errors: (validator.errors ?? []).map(
-        (error) => `${error.instancePath || "(root)"} ${error.message ?? "is invalid"}`,
-      ),
-    };
+    const errors: string[] = [];
+    const ignored: string[] = [];
+    for (const error of validator.errors ?? []) {
+      const description: string = describeError(error);
+      const deviation = KNOWN_DEVIATIONS.find((known) =>
+        known.matches({
+          keyword: error.keyword,
+          instancePath: error.instancePath,
+          params: error.params as Record<string, unknown>,
+        }),
+      );
+      (deviation === undefined ? errors : ignored).push(
+        deviation === undefined ? description : `${description} [${deviation.id}]`,
+      );
+    }
+    return { valid: errors.length === 0, errors, ignored };
   }
+}
+
+function describeError(error: ErrorObject): string {
+  const base: string = `${error.instancePath || "(root)"} ${error.message ?? "is invalid"}`;
+  return error.keyword === "format"
+    ? `${base} (value: ${JSON.stringify(error.data)})`
+    : base;
 }

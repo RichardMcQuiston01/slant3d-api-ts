@@ -65,7 +65,11 @@ export class OrdersResource {
     return this.http.request("GET", "orders", { query: { ...query } });
   }
 
-  /** `GET /orders/search` */
+  /**
+   * `GET /orders/search`. When nothing matches, the API responds 400 ("Order
+   * not found."), which surfaces as a `Slant3dValidationError` rather
+   * than an empty list.
+   */
   search(query: string): Promise<ApiResponse<Order[]>> {
     return this.http.request("GET", "orders/search", { query: { query } });
   }

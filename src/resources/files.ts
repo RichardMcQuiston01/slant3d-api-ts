@@ -106,7 +106,12 @@ export class FilesResource {
     return this.http.request("POST", "files/batch", { body: { publicIds } });
   }
 
-  /** `PATCH /files/{publicFileId}`: reassign the file to another owner id. */
+  /**
+   * `PATCH /files/{publicFileId}`: reassign the file to another owner id. The
+   * spec allows the file creator or an admin, but a `free` role account was
+   * observed getting 403 "Admin access required" for its own file
+   * (`Slant3dAuthorizationError`); the spec lists no 403 here.
+   */
   updateOwner(
     publicFileId: string,
     ownerId: string,
@@ -116,7 +121,12 @@ export class FilesResource {
     });
   }
 
-  /** `DELETE /files/{publicFileId}` */
+  /**
+   * `DELETE /files/{publicFileId}`. The spec says only the file creator may
+   * delete, but accounts with a non-admin role (e.g. `free`) were observed
+   * getting 403 "Admin access required" even for their own files, which
+   * surfaces as `Slant3dAuthorizationError`.
+   */
   delete(publicFileId: string): Promise<ApiResponse<undefined>> {
     return this.http.request("DELETE", `files/${encodeURIComponent(publicFileId)}`);
   }

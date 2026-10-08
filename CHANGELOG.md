@@ -28,9 +28,7 @@
 
 - `.env.example` now uses `SLANT3D_API_TOKEN`, matching what the client reads.
 
-## Unreleased
-
-### Added
+### Added (contract tooling)
 
 - `bun run spec:diff`: compares every client operation (method, path, query
   parameters, body properties) with the live OpenAPI spec and exits non-zero
@@ -41,4 +39,18 @@
   responses against the spec. Public and error-path checks need no key;
   read-only checks need `SLANT3D_API_TOKEN`; a file upload round trip also
   needs `SLANT3D_LIVE_WRITE=1` and `SLANT3D_LIVE_PLATFORM_ID`. No orders are
-  created.
+  created. Known, harmless differences between the live API and the spec are
+  listed in `contract/knownDeviations.ts` and reported as warnings.
+
+### Documented
+
+- `account.listApiKeys` / `account.createApiKey` only work with a session
+  cookie per the spec; with Bearer auth they return 401.
+- `PATCH /files/{id}` and `DELETE /files/{id}` returned 403 "Admin access
+  required" for a `free` role account acting on its own file, although the
+  spec only requires the creator (and lists no 403 for `PATCH`). The live
+  upload test therefore warns on those 403s and reuses one test file instead
+  of deleting after each run.
+- Platform `webhookURL` is `""` (not omitted) when unset.
+- `GET /filaments` returns `imageURL: ""` instead of omitting it when a
+  filament has no image.
