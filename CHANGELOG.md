@@ -1,5 +1,40 @@
 # CHANGELOG
 
+## Unreleased
+
+### Removed (breaking)
+
+- `account.listApiKeys` / `account.createApiKey`. The spec allows only the
+  web session cookie on `/apiKey`, so every call with Bearer auth failed with
+  a 401 that looked like a rejected key.
+
+### Fixed
+
+- `platforms.sendCustomWebhook` now posts to `/v2/slant/webhook` (the spec's
+  operation-level server) instead of `/v2/api/slant/webhook`, which 404s. A
+  custom `baseUrl` is honored. `spec:diff` now compares absolute URLs.
+- Path ids of `.` or `..` are rejected with `Slant3dConfigError` instead of
+  being resolved by the URL parser into a different endpoint.
+- The request timeout now covers reading the response body, not only the
+  headers. New `maxResponseBytes` option (throws
+  `Slant3dResponseTooLargeError`).
+- A 2xx response whose body is not JSON now throws `Slant3dApiError` instead
+  of resolving with the raw string.
+- `Retry-After` accepts HTTP-dates, ignores negative or invalid values, and
+  is capped at 60 seconds.
+- `files.upload` requires an `https:` presigned URL without embedded
+  credentials, refuses redirects, applies the client timeout, and truncates
+  the storage error body. `allowInsecureUploadUrl` exists for local tests.
+- Webhook verification rejects timestamps too far in the future, compares raw
+  digests, and uses fixed failure messages (no header or parser text).
+  Parser errors are on `Slant3dWebhookError.cause`.
+
+### Added
+
+- `secret` for `verifyWebhookSignature` / `constructWebhookEvent` accepts an
+  array, for verifying across a secret rotation.
+- `dummy?: boolean` on webhook events (set on test webhooks).
+
 ## 0.2.0
 
 ### Changed (breaking)

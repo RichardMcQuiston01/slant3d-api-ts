@@ -53,6 +53,11 @@ interface WebhookBase<TType extends WebhookEventType, TData> {
   platform_id: string;
   /** Unix milliseconds, as a string. */
   timestamp?: string;
+  /**
+   * `true` on events from `platforms.sendTestWebhook`. Nothing was stored and
+   * no order changed, so handlers should ignore these.
+   */
+  dummy?: boolean;
   data: TData;
 }
 

@@ -80,6 +80,18 @@ describe("diffAgainstSpec", () => {
     expect(formatDiff(diff)).toBe("");
   });
 
+  test("does not report deliberately unsupported operations as missing", () => {
+    const diff = diffAgainstSpec(
+      [
+        { method: "a", key: "GET /things", queryKeys: [], bodyKeys: [] },
+        { method: "b", key: "POST /things", queryKeys: [], bodyKeys: [] },
+      ],
+      operations,
+      new Set(["DELETE /things/{}"]),
+    );
+    expect(diff.missingFromClient).toEqual([]);
+  });
+
   test("reports missing, unknown, and mismatched operations", () => {
     const diff = diffAgainstSpec(
       [
@@ -93,6 +105,55 @@ describe("diffAgainstSpec", () => {
     expect(diff.unknownToSpec).toEqual(["GET /extra (client method c)"]);
     expect(diff.unknownQueryParams).toEqual(['GET /things: "bogus" (client method a)']);
     expect(diff.unknownBodyProperties).toEqual(['POST /things: "bogus" (client method b)']);
+    expect(hasDifferences(diff)).toBe(true);
+  });
+});
+
+describe("absolute URL comparison", () => {
+  const spec: OpenApiDocument = {
+    openapi: "3.0.3",
+    info: { version: "2.0.0" },
+    servers: [{ url: "https://api.example.test/v2/api" }],
+    paths: {
+      "/things": { get: {} },
+      "/hook": {
+        post: { servers: [{ url: "https://api.example.test/v2" }] },
+      },
+    },
+  };
+  const operations = extractOperations(spec);
+
+  test("uses the operation-level servers override", () => {
+    expect(operations.get("GET /things")?.absoluteUrl).toBe(
+      "https://api.example.test/v2/api/things",
+    );
+    expect(operations.get("POST /hook")?.absoluteUrl).toBe(
+      "https://api.example.test/v2/hook",
+    );
+  });
+
+  test("flags a client that calls the document server instead of the override", () => {
+    const diff = diffAgainstSpec(
+      [
+        {
+          method: "a",
+          key: "GET /things",
+          queryKeys: [],
+          bodyKeys: [],
+          absoluteUrl: "https://api.example.test/v2/api/things",
+        },
+        {
+          method: "b",
+          key: "POST /hook",
+          queryKeys: [],
+          bodyKeys: [],
+          absoluteUrl: "https://api.example.test/v2/api/hook",
+        },
+      ],
+      operations,
+    );
+    expect(diff.urlMismatches).toHaveLength(1);
+    expect(diff.urlMismatches[0]).toContain("POST /hook");
     expect(hasDifferences(diff)).toBe(true);
   });
 });

@@ -162,9 +162,16 @@ export class PlatformsResource {
     );
   }
 
-  /** `POST /slant/webhook`: sends a custom webhook to one of your platforms. */
+  /**
+   * `POST /slant/webhook`: sends a custom webhook to one of your platforms.
+   * The spec serves this route from `https://slant3dapi.com/v2/slant/webhook`,
+   * outside the `/api` prefix used by every other operation.
+   */
   sendCustomWebhook(payload: WebhookPayload): Promise<ApiResponse<undefined>> {
-    return this.http.request("POST", "slant/webhook", { body: payload });
+    return this.http.request("POST", "slant/webhook", {
+      body: payload,
+      outsideApiPrefix: true,
+    });
   }
 
   /** `GET /platforms/stripe/public-key` */

@@ -128,7 +128,8 @@ Network and timeout failures throw `Slant3dNetworkError` /
 ## Retries
 
 `GET` requests are retried (default 2 times, exponential backoff, honoring
-`Retry-After`) on network errors, timeouts, 429 and 500/502/503/504.
+`Retry-After` as seconds or an HTTP-date, capped at 60 seconds) on network
+errors, timeouts, 429 and 500/502/503/504.
 Non-`GET` requests are **never** retried, since creating and processing
 orders is not idempotent. Tune with `maxRetries` / `retryBaseDelayMs`.
 
@@ -153,9 +154,29 @@ if (event.event_type === "order.shipped") {
 ```
 
 Signatures are HMAC-SHA256 over `"<timestamp>.<body>"`, checked in constant
-time, and webhooks older than 5 minutes are rejected. Use
-`verifyWebhookSignature` directly if you want a result object instead of an
-exception.
+time, and webhooks whose timestamp is more than 5 minutes from your clock
+(past or future) are rejected. Use `verifyWebhookSignature` directly if you
+want a result object instead of an exception.
+
+**Rotating the secret.** Rotation takes effect immediately on Slant3D's side.
+To avoid dead webhooks while a deploy rolls out, pass both secrets, then drop
+the old one once every instance has the new value:
+
+```ts
+secret: [process.env.SLANT3D_WEBHOOK_SECRET!, process.env.SLANT3D_WEBHOOK_SECRET_PREVIOUS!],
+```
+
+**Replays.** A validly signed delivery is accepted again if it is resent
+inside the 5 minute window, and legitimate retries look identical. Events
+have no id, so store a hash of the raw body for at least 5 minutes and skip
+repeats.
+
+**Test webhooks.** `platforms.sendTestWebhook` delivers an `order.shipped`
+event with `dummy: true`. Ignore events where `event.dummy` is set.
+
+**Body size and upload URLs.** Set `maxResponseBytes` on the client to cap
+how much of a response is read. `files.upload` only PUTs to `https:`
+presigned URLs without embedded credentials, and does not follow redirects.
 
 ## Examples
 
@@ -272,6 +293,10 @@ export async function handleSlantWebhook(request: Request): Promise<Response> {
       secret: process.env.SLANT3D_WEBHOOK_SECRET ?? "",
     });
 
+    if (event.dummy) {
+      return new Response("ignored test webhook");
+    }
+
     if (event.event_type === "order.shipped") {
       const { public_id, tracking_number } = event.data.order;
       console.log(`${public_id} shipped. Tracking: ${tracking_number}`);
@@ -279,7 +304,9 @@ export async function handleSlantWebhook(request: Request): Promise<Response> {
     return new Response("ok");
   } catch (error) {
     if (error instanceof Slant3dWebhookError) {
-      return new Response(error.message, { status: 401 });
+      // Log the reason; never echo it (or request data) back to the sender.
+      console.warn(`Rejected webhook: ${error.message}`, error.cause);
+      return new Response("Unauthorized", { status: 401 });
     }
     throw error;
   }

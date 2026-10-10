@@ -16,7 +16,12 @@ interface SpecParameter {
   in: string;
 }
 
+interface SpecServer {
+  url: string;
+}
+
 interface SpecOperationObject {
+  servers?: SpecServer[];
   parameters?: SpecParameter[];
   requestBody?: {
     content?: Record<string, { schema?: JsonSchema }>;
@@ -27,6 +32,7 @@ interface SpecOperationObject {
 export interface OpenApiDocument {
   openapi: string;
   info: { version: string };
+  servers?: SpecServer[];
   paths: Record<string, Record<string, unknown>>;
   components?: { schemas?: Record<string, JsonSchema> };
 }
@@ -40,6 +46,12 @@ export interface SpecOperation {
   queryParams: ReadonlySet<string>;
   /** Top-level JSON body properties, or `undefined` when not described. */
   bodyProperties: ReadonlySet<string> | undefined;
+  /**
+   * Absolute URL with `{}` for path parameters, using the operation's
+   * `servers` override when it has one, else the document's first server.
+   * `undefined` when the spec declares no server.
+   */
+  absoluteUrl: string | undefined;
   /** JSON pointer to the 200 response schema, when one is declared. */
   responseSchemaPointer: string | undefined;
 }
@@ -158,7 +170,14 @@ export function extractOperations(
             | undefined
         )?.content?.["application/json"]?.schema !== undefined;
       const key: string = operationKey(method, path);
+      const serverUrl: string | undefined = (
+        operation.servers ?? document.servers
+      )?.[0]?.url;
       operations.set(key, {
+        absoluteUrl:
+          serverUrl === undefined
+            ? undefined
+            : `${serverUrl.replace(/\/+$/, "")}${normalizePath(path)}`,
         key,
         method: method.toUpperCase(),
         path,

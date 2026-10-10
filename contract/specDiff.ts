@@ -6,6 +6,8 @@ export interface SpecDiff {
   missingFromClient: string[];
   /** Client operations the spec does not define. */
   unknownToSpec: string[];
+  /** Operations whose absolute URL differs between the client and the spec. */
+  urlMismatches: string[];
   /** Query parameter names the client sends that the spec does not list. */
   unknownQueryParams: string[];
   /** Body properties the client sends that the spec does not describe. */
@@ -16,10 +18,12 @@ export interface SpecDiff {
 export function diffAgainstSpec(
   clientCalls: readonly ClientCall[],
   specOperations: ReadonlyMap<string, SpecOperation>,
+  unsupported: ReadonlySet<string> = new Set(),
 ): SpecDiff {
   const diff: SpecDiff = {
     missingFromClient: [],
     unknownToSpec: [],
+    urlMismatches: [],
     unknownQueryParams: [],
     unknownBodyProperties: [],
   };
@@ -31,6 +35,15 @@ export function diffAgainstSpec(
     if (operation === undefined) {
       diff.unknownToSpec.push(`${call.key} (client method ${call.method})`);
       continue;
+    }
+    if (
+      call.absoluteUrl !== undefined &&
+      operation.absoluteUrl !== undefined &&
+      call.absoluteUrl !== operation.absoluteUrl
+    ) {
+      diff.urlMismatches.push(
+        `${call.key}: client calls ${call.absoluteUrl}, spec says ${operation.absoluteUrl} (client method ${call.method})`,
+      );
     }
     for (const queryKey of call.queryKeys) {
       if (!operation.queryParams.has(queryKey)) {
@@ -51,7 +64,7 @@ export function diffAgainstSpec(
   }
 
   for (const key of specOperations.keys()) {
-    if (!covered.has(key)) {
+    if (!covered.has(key) && !unsupported.has(key)) {
       diff.missingFromClient.push(key);
     }
   }
@@ -67,6 +80,7 @@ export function formatDiff(diff: SpecDiff): string {
   const sections: [string, string[]][] = [
     ["In the spec but not implemented by the client", diff.missingFromClient],
     ["Implemented by the client but not in the spec", diff.unknownToSpec],
+    ["Absolute URL differs from the spec (check operation-level servers)", diff.urlMismatches],
     ["Query parameters the spec does not list", diff.unknownQueryParams],
     ["Body properties the spec does not describe", diff.unknownBodyProperties],
   ];

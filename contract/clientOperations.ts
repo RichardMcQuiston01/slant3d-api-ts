@@ -5,7 +5,8 @@ import { operationKey } from "./specOperations.js";
 
 /** Stand-in for every id argument; swapped for `{}` when building the key. */
 const ID: string = "SENTINEL_ID";
-const BASE_PATH: string = "/v2/api";
+/** Path prefixes the spec's servers can end in; the rest is the spec path. */
+const SERVER_PATHS: readonly string[] = ["/v2/api", "/v2"];
 
 type Invocation = (client: Slant3dClient) => Promise<unknown>;
 
@@ -145,8 +146,6 @@ export const INVOCATIONS: Readonly<Record<string, Invocation>> = {
     client.filaments.list({ profile: ["PLA", "PETG"], color: ["black"] }),
   "stationery.list": (client) => client.stationery.list(),
   "account.getUsage": (client) => client.account.getUsage(),
-  "account.listApiKeys": (client) => client.account.listApiKeys(),
-  "account.createApiKey": (client) => client.account.createApiKey("contract"),
   "health.status": (client) => client.health.status(),
 };
 
@@ -156,6 +155,21 @@ export const INVOCATIONS: Readonly<Record<string, Invocation>> = {
  */
 export const COMPOSITE_METHODS: ReadonlySet<string> = new Set(["files.upload"]);
 
+/**
+ * Spec operations the client deliberately does not implement, with the
+ * reason. `spec:diff` does not report these as missing.
+ */
+export const UNSUPPORTED_OPERATIONS: ReadonlyMap<string, string> = new Map([
+  [
+    "GET /apiKey",
+    "Session-cookie auth only; the client sends Bearer auth, so every call would 401.",
+  ],
+  [
+    "POST /apiKey",
+    "Session-cookie auth only; the client sends Bearer auth, so every call would 401.",
+  ],
+]);
+
 export interface ClientCall {
   /** Name of the client method, e.g. `files.list`. */
   method: string;
@@ -163,6 +177,8 @@ export interface ClientCall {
   key: string;
   queryKeys: readonly string[];
   bodyKeys: readonly string[];
+  /** Absolute URL with `{}` for ids, comparable to {@link SpecOperation.absoluteUrl}. */
+  absoluteUrl?: string;
 }
 
 /** Runs every invocation against a recording mock and returns the calls. */
@@ -192,15 +208,24 @@ export async function collectClientCalls(): Promise<ClientCall[]> {
     }
     const call = made[0];
     const url = new URL(call.url);
-    const path: string = url.pathname
-      .slice(url.pathname.indexOf(BASE_PATH) + BASE_PATH.length)
+    const templated: string = url.pathname
       .split("/")
       .map((segment: string) => (segment === ID ? "{}" : segment))
       .join("/");
+    const serverPath: string | undefined = SERVER_PATHS.find(
+      (prefix: string) => templated.startsWith(`${prefix}/`),
+    );
+    if (serverPath === undefined) {
+      throw new Error(
+        `Invocation "${method}" called ${call.url}, which is outside the known server paths`,
+      );
+    }
+    const path: string = templated.slice(serverPath.length);
     const body: unknown = call.body;
     calls.push({
       method,
       key: operationKey(call.method, path),
+      absoluteUrl: `${url.origin}${templated}`,
       queryKeys: [...new Set(url.searchParams.keys())],
       bodyKeys:
         typeof body === "object" && body !== null && !Array.isArray(body)
