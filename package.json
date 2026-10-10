@@ -1,6 +1,6 @@
 {
   "name": "@richardmcquiston01/slant3d-api-ts",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Framework-agnostic TypeScript client for Slant3D's 3D-printing-as-a-service API.",
   "keywords": [
     "slant3d",
