@@ -2,47 +2,33 @@
 
 ## Overview
 
-Framework agnostic TypeScript based package for interacting with Slant3D's API service.
+Slant 3D runs a big 3D printing farm. You send them a 3D model file, and they
+print it, pack it, and ship it to your customer. Slant 3D also has an API,
+which is a way for computer programs to talk to their service.
 
-> **Accuracy note:** this client was built from Slant3D's public marketing
-> pages and third-party community documentation, not a verified API
-> contract — the official docs are a client-rendered site that couldn't be
-> scraped while building v1. Quote/pricing (`client.quotes`) is the
-> best-documented endpoint; order creation, tracking, filaments, and
-> webhooks are best-guess placeholders. See the `@remarks` notes on each
-> type/method in `src/resources/` before relying on them in production.
+This package lets your own code use that API. You do not have to write the
+web requests yourself.
 
-## Installation
+With it, your code can:
 
-```sh
-npm install @richardmcquiston01/slant3d-api-ts
-# or
-bun add @richardmcquiston01/slant3d-api-ts
-```
+- upload 3D model files and see a price before you buy
+- place orders and check on them
+- get a message when an order ships
+- look up the materials, colors, and parts you can order
 
-## Quick Start
+The package takes care of signing in, retrying when the network hiccups, and
+turning errors into clear messages. It also describes the shape of every piece
+of data, so your code editor can catch mistakes before you run anything.
 
-```ts
-import { Slant3dClient } from "@richardmcquiston01/slant3d-api-ts";
+It is written in TypeScript. It works in Node.js, Bun, Deno, and other places
+that run JavaScript. It does not need any other packages to work.
 
-const client = new Slant3dClient({ apiToken: process.env.SLANT3D_API_TOKEN });
+This is an unofficial package. It is not made by Slant 3D.
 
-const quote = await client.quotes.create({
-  fileURL: "https://example.com/model.stl",
-});
+## Getting Started
 
-console.log(quote.data.price);
-```
-
-## Support
-
-If this library saved you some reverse-engineering, consider [buying me a coffee](https://www.paypal.com/ncp/payment/VDTESHTRR7684). ☕
-
-## Resources
-
-- <https://www.slant3d.com/slant-3d-printing-api>
-- <https://www.slant3dapi.com/documentation/introduction>
-- <https://slant3dapi.com/>
+See [GETTING_STARTED.md](./GETTING_STARTED.md) for installation, setup, and
+examples.
 
 ## License
 
@@ -51,3 +37,11 @@ MIT
 ## Copyright
 
 Copyright (c)2026 Richard McQuiston
+
+## Buy Me a Coffee
+
+If this app, code, or repository has helped you or someone you know, please consider donating. I appreciate any help to offset the costs of development and/or AI Credits.
+
+[**Donate via Stripe**](https://donate.stripe.com/00w5kD3Gj1Xo9v7gVOcs800), or scan:
+
+[![Donate via Stripe](./donate.svg)](https://donate.stripe.com/00w5kD3Gj1Xo9v7gVOcs800)

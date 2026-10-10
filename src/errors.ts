@@ -22,6 +22,12 @@ export class Slant3dNetworkError extends Slant3dError {
   }
 }
 
+/**
+ * Thrown when a response body exceeds the configured `maxResponseBytes`.
+ * Not retried: the same response would exceed the limit again.
+ */
+export class Slant3dResponseTooLargeError extends Slant3dError {}
+
 /** Thrown when a request is aborted after exceeding its configured timeout. */
 export class Slant3dTimeoutError extends Slant3dError {}
 
@@ -131,22 +137,63 @@ export function mapHttpError(
 }
 
 function extractMessage(body: unknown): string | undefined {
-  if (
-    body !== null &&
-    typeof body === "object" &&
-    "message" in body &&
-    typeof (body as { message: unknown }).message === "string"
-  ) {
-    return (body as { message: string }).message;
+  if (body === null || typeof body !== "object") {
+    return undefined;
   }
-  return undefined;
+  const { message, error } = body as { message?: unknown; error?: unknown };
+  // V2 shape: { success, message, error?: string }
+  if (typeof message === "string" && typeof error === "string") {
+    return `${message}: ${error}`;
+  }
+  if (typeof message === "string") {
+    return message;
+  }
+  // Some endpoints (e.g. GET /filaments) nest it: { error: { message } }
+  if (error !== null && typeof error === "object") {
+    const nested: unknown = (error as { message?: unknown }).message;
+    if (typeof nested === "string") {
+      return nested;
+    }
+  }
+  return typeof error === "string" ? error : undefined;
 }
 
-function parseRetryAfterMs(headers?: Headers): number | undefined {
-  const retryAfter = headers?.get("retry-after");
+/**
+ * Parses a `Retry-After` header (RFC 9110): either delta-seconds or an
+ * HTTP-date. Returns the requested wait in milliseconds, or `undefined` when
+ * the header is absent, negative, non-finite, or unparseable, so callers fall
+ * back to their own backoff. A date in the past yields `0`.
+ */
+export function parseRetryAfterMs(
+  headers?: Headers,
+  now: number = Date.now(),
+): number | undefined {
+  const retryAfter: string | undefined = headers?.get("retry-after")?.trim();
   if (!retryAfter) {
     return undefined;
   }
-  const seconds = Number(retryAfter);
-  return Number.isFinite(seconds) ? seconds * 1000 : undefined;
+  if (/^\d+$/.test(retryAfter)) {
+    const ms: number = Number(retryAfter) * 1000;
+    return Number.isFinite(ms) ? ms : undefined;
+  }
+  // HTTP-dates start with a day name; this keeps Date.parse from reading
+  // "-5" or other stray numerics as years.
+  const dateMs: number = /^[A-Za-z]/.test(retryAfter)
+    ? Date.parse(retryAfter)
+    : Number.NaN;
+  return Number.isNaN(dateMs) ? undefined : Math.max(0, dateMs - now);
+}
+
+/** Thrown when a webhook signature, timestamp, or payload fails verification. */
+export class Slant3dWebhookError extends Slant3dError {
+  override readonly cause?: unknown;
+
+  /**
+   * @param message Fixed, caller-safe text; never interpolate request data.
+   * @param cause Underlying error for server-side logs only.
+   */
+  constructor(message: string, cause?: unknown) {
+    super(message);
+    this.cause = cause;
+  }
 }

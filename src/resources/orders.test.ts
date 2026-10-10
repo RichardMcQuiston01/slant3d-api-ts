@@ -1,62 +1,81 @@
 import { describe, expect, it } from "bun:test";
 import { HttpClient } from "../http/httpClient.js";
 import { createMockFetch, jsonResponse } from "../testing/mockFetch.js";
-import { type CreateOrderRequest, OrdersResource } from "./orders.js";
+import { OrdersResource, type CreateOrderRequest } from "./orders.js";
 
-const sampleRequest: CreateOrderRequest = {
-  email: "customer@example.com",
-  phone: "+1-555-123-4567",
-  name: "Jane Customer",
-  orderNumber: "ORD-1001",
-  filename: "bracket.stl",
-  fileURL: "https://example.com/bracket.stl",
-  bill_to_street_1: "123 Main St",
-  bill_to_street_2: "Suite 4",
-  bill_to_city: "Springfield",
-  bill_to_state: "IL",
-  bill_to_zip: "62701",
-  bill_to_country_as_iso: "US",
-  bill_to_is_US_residential: true,
-  ship_to_name: "Jane Customer",
-  ship_to_street_1: "456 Oak Ave",
-  ship_to_city: "Springfield",
-  ship_to_state: "IL",
-  ship_to_zip: "62702",
-  ship_to_country_as_iso: "US",
-  ship_to_is_US_residential: true,
-  order_item_name: "Bracket",
-  order_quantity: 2,
-  order_image_url: "https://example.com/bracket.png",
-  order_sku: "SKU-1",
-  order_item_color: "black",
-};
+const ENVELOPE = { success: true, message: "ok" };
+
+function setup(body: unknown = { ...ENVELOPE, data: {} }) {
+  const { fetch, calls } = createMockFetch(() => jsonResponse(200, body));
+  const orders = new OrdersResource(
+    new HttpClient({ apiToken: "abc123", fetchImpl: fetch }),
+  );
+  return { orders, calls };
+}
 
 describe("OrdersResource", () => {
-  it("posts to the guessed order path with the exact request body and returns the typed response", async () => {
-    const { fetch, calls } = createMockFetch(() =>
-      jsonResponse(200, { message: "success", orderId: "abc-123" }),
-    );
-    const client = new HttpClient({ apiToken: "abc123", fetchImpl: fetch });
-    const orders = new OrdersResource(client);
+  const request: CreateOrderRequest = {
+    platformId: "11111111-1111-1111-1111-111111111111",
+    customer: {
+      details: {
+        email: "a@example.com",
+        address: {
+          name: "Ada",
+          line1: "1 Main St",
+          city: "Austin",
+          state: "TX",
+          zip: "78701",
+        },
+      },
+    },
+    items: [{ type: "PRINT", publicFileServiceId: "f1", quantity: 2 }],
+  };
 
-    const result = await orders.create(sampleRequest);
-
-    expect(calls).toHaveLength(1);
+  it("creates a draft with POST orders", async () => {
+    const { orders, calls } = setup();
+    await orders.createDraft(request);
     expect(calls[0]?.method).toBe("POST");
-    expect(calls[0]?.url).toBe("https://www.slant3dapi.com/api/order");
-    expect(calls[0]?.body).toEqual(sampleRequest);
-    expect(result).toEqual({ message: "success", orderId: "abc-123" });
+    expect(calls[0]?.url).toBe("https://slant3dapi.com/v2/api/orders");
+    expect(calls[0]?.body).toEqual(request);
   });
 
-  it("returns the typed response even when orderId is absent", async () => {
-    const { fetch } = createMockFetch(() =>
-      jsonResponse(200, { message: "success" }),
+  it("processes a draft with POST orders/{id} and no body", async () => {
+    const { orders, calls } = setup();
+    await orders.process("SLANT_0123456789");
+    expect(calls[0]?.method).toBe("POST");
+    expect(calls[0]?.url).toBe(
+      "https://slant3dapi.com/v2/api/orders/SLANT_0123456789",
     );
-    const client = new HttpClient({ apiToken: "abc123", fetchImpl: fetch });
-    const orders = new OrdersResource(client);
+    expect(calls[0]?.body).toBeUndefined();
+  });
 
-    const result = await orders.create(sampleRequest);
+  it("cancels with DELETE orders/{id}", async () => {
+    const { orders, calls } = setup();
+    await orders.cancel("SLANT_1");
+    expect(calls[0]?.method).toBe("DELETE");
+    expect(calls[0]?.url).toBe("https://slant3dapi.com/v2/api/orders/SLANT_1");
+  });
 
-    expect(result).toEqual({ message: "success" });
+  it("lists with filters and pagination as query params", async () => {
+    const { orders, calls } = setup();
+    await orders.list({ status: "SHIPPED", page: 2, limit: 10 });
+    expect(calls[0]?.url).toBe(
+      "https://slant3dapi.com/v2/api/orders?status=SHIPPED&page=2&limit=10",
+    );
+  });
+
+  it("batch-gets with the snake_case public_ids body key", async () => {
+    const { orders, calls } = setup();
+    await orders.getMany(["SLANT_1", "SLANT_2"]);
+    expect(calls[0]?.url).toBe("https://slant3dapi.com/v2/api/orders/batch");
+    expect(calls[0]?.body).toEqual({ public_ids: ["SLANT_1", "SLANT_2"] });
+  });
+
+  it("searches with the query param", async () => {
+    const { orders, calls } = setup();
+    await orders.search("ada");
+    expect(calls[0]?.url).toBe(
+      "https://slant3dapi.com/v2/api/orders/search?query=ada",
+    );
   });
 });

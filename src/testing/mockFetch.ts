@@ -4,6 +4,7 @@ export interface MockFetchCall {
   method: string;
   headers: Headers;
   body: unknown;
+  redirect: RequestInit["redirect"];
 }
 
 export type MockFetchHandler = (
@@ -38,6 +39,7 @@ export function createMockFetch(handler: MockFetchHandler): {
       method: init?.method ?? "GET",
       headers,
       body,
+      redirect: init?.redirect,
     };
     calls.push(call);
 
