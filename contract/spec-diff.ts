@@ -6,7 +6,7 @@
  *
  * The source defaults to `SLANT3D_SPEC_SOURCE`, then the production URL.
  */
-import { collectClientCalls } from "./clientOperations.js";
+import { collectClientCalls, UNSUPPORTED_OPERATIONS } from "./clientOperations.js";
 import { diffAgainstSpec, formatDiff, hasDifferences } from "./specDiff.js";
 import {
   DEFAULT_SPEC_URL,
@@ -30,7 +30,11 @@ async function main(): Promise<number> {
   }
 
   const clientCalls = await collectClientCalls();
-  const diff = diffAgainstSpec(clientCalls, specOperations);
+  const diff = diffAgainstSpec(
+    clientCalls,
+    specOperations,
+    new Set(UNSUPPORTED_OPERATIONS.keys()),
+  );
 
   console.log(
     `Spec ${source} (version ${specVersion}): ${specOperations.size} operations, ` +

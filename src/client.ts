@@ -28,6 +28,13 @@ export interface Slant3dClientOptions {
   maxRetries?: number;
   /** Base delay for retry backoff in milliseconds. Defaults to 500. */
   retryBaseDelayMs?: number;
+  /**
+   * Maximum response body size in bytes; larger bodies throw
+   * `Slant3dResponseTooLargeError`. Unlimited by default.
+   */
+  maxResponseBytes?: number;
+  /** Allow `http:` presigned upload URLs. For local test servers only. */
+  allowInsecureUploadUrl?: boolean;
 }
 
 /**
@@ -63,9 +70,11 @@ export class Slant3dClient {
       timeoutMs: options.timeoutMs,
       maxRetries: options.maxRetries,
       retryBaseDelayMs: options.retryBaseDelayMs,
+      maxResponseBytes: options.maxResponseBytes,
+      allowInsecureUploadUrl: options.allowInsecureUploadUrl,
     });
 
-    this.files = new FilesResource(this.http, fetchImpl);
+    this.files = new FilesResource(this.http);
     this.orders = new OrdersResource(this.http);
     this.platforms = new PlatformsResource(this.http);
     this.components = new ComponentsResource(this.http);

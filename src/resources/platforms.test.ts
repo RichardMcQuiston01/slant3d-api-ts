@@ -53,7 +53,8 @@ describe("PlatformsResource", () => {
       platform_id: "p1",
       data: { order: { public_id: "SLANT_1", status: "SHIPPED" } },
     });
-    expect(calls[0]?.url).toBe(`${BASE}/slant/webhook`);
+    // Served from /v2, outside the /api prefix (operation-level `servers`).
+    expect(calls[0]?.url).toBe("https://slant3dapi.com/v2/slant/webhook");
     expect(calls[0]?.method).toBe("POST");
   });
 });

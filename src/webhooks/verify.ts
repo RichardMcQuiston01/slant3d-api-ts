@@ -15,9 +15,14 @@ export interface VerifyWebhookOptions {
   timestamp: string;
   /** Value of the `X-Webhook-Signature-256` header (`sha256=<hex>`). */
   signature: string;
-  /** The platform's `webhookSecret`. */
-  secret: string;
-  /** Maximum accepted age in ms. Defaults to 5 minutes. */
+  /**
+   * The platform's `webhookSecret`. Pass several to accept any of them. A
+   * rotation takes effect at once on the API side, so during a rollout pass
+   * `[newSecret, previousSecret]`, then drop the old one once every instance
+   * has the new value.
+   */
+  secret: string | readonly string[];
+  /** Maximum accepted clock difference in ms, either direction. Defaults to 5 minutes. */
   toleranceMs?: number;
   /** Current time in Unix ms. Defaults to `Date.now()`. For tests. */
   now?: number;
@@ -30,14 +35,20 @@ export type WebhookVerificationResult =
 /**
  * Verifies a Slant3D webhook: HMAC-SHA256 over `"<timestamp>.<rawBody>"`
  * keyed with the platform's webhook secret, compared in constant time, and
- * rejected when older than the tolerance. Uses Web Crypto, so it runs on
+ * rejected when the timestamp is more than the tolerance away from the
+ * receiver's clock (too old or too far in the future).
+ *
+ * Failure reasons are fixed strings that never include request data. Uses Web Crypto, so it runs on
  * Node 18+, Bun, Deno, and edge runtimes.
  */
 export async function verifyWebhookSignature(
   options: VerifyWebhookOptions,
 ): Promise<WebhookVerificationResult> {
-  const { payload, timestamp, signature, secret } = options;
-  if (!secret) {
+  const { payload, timestamp, signature } = options;
+  const secrets: readonly string[] = (
+    typeof options.secret === "string" ? [options.secret] : options.secret
+  ).filter((candidate: string) => candidate.length > 0);
+  if (secrets.length === 0) {
     return { valid: false, reason: "Webhook secret is empty" };
   }
   if (!signature) {
@@ -47,27 +58,35 @@ export async function verifyWebhookSignature(
   if (!timestamp || !Number.isFinite(timestampMs)) {
     return {
       valid: false,
-      reason: `Missing or non-numeric ${WEBHOOK_TIMESTAMP_HEADER} header: "${timestamp}"`,
+      reason: `Missing or non-numeric ${WEBHOOK_TIMESTAMP_HEADER} header`,
     };
   }
 
-  const expectedHex: string = signature.replace(/^sha256=/, "").toLowerCase();
-  const computedHex: string = await hmacSha256Hex(
-    secret,
-    `${timestamp}.${payload}`,
-  );
-  if (!constantTimeEqual(expectedHex, computedHex)) {
+  const expected: Uint8Array | undefined = decodeSignature(signature);
+  const message = `${timestamp}.${payload}`;
+  // Every candidate is computed and compared, so a match on the first secret
+  // does not return early.
+  let matched = false;
+  for (const secret of secrets) {
+    const computed: Uint8Array = await hmacSha256(secret, message);
+    const equal: boolean = constantTimeEqual(
+      expected ?? new Uint8Array(computed.length),
+      computed,
+    );
+    matched = matched || (equal && expected !== undefined);
+  }
+  if (!matched) {
     return { valid: false, reason: "Signature does not match payload" };
   }
 
   const now: number = options.now ?? Date.now();
   const toleranceMs: number =
     options.toleranceMs ?? DEFAULT_WEBHOOK_TOLERANCE_MS;
-  const ageMs: number = now - timestampMs;
-  if (ageMs > toleranceMs) {
+  const skewMs: number = now - timestampMs;
+  if (Math.abs(skewMs) > toleranceMs) {
     return {
       valid: false,
-      reason: `Webhook is ${ageMs}ms old, which exceeds the ${toleranceMs}ms tolerance`,
+      reason: `Webhook timestamp is ${skewMs}ms from the receiver clock, outside the ${toleranceMs}ms tolerance`,
     };
   }
   return { valid: true };
@@ -78,15 +97,22 @@ export interface ConstructWebhookEventOptions {
   payload: string;
   /** Request headers; lookups are case-insensitive. */
   headers: Headers | Readonly<Record<string, string | string[] | undefined>>;
-  secret: string;
+  /** One secret, or several to accept during a rotation. See {@link VerifyWebhookOptions.secret}. */
+  secret: string | readonly string[];
   toleranceMs?: number;
   now?: number;
 }
 
 /**
  * Verifies the signature headers on a webhook request and returns the parsed
- * event. Throws {@link Slant3dWebhookError} with a descriptive reason when
- * verification or parsing fails.
+ * event. Throws {@link Slant3dWebhookError} when verification or parsing
+ * fails. The message is a fixed string safe to log; do not return it to the
+ * sender. Parser details are on `error.cause`.
+ *
+ * Replay: a delivery is accepted again if it is resubmitted inside the
+ * tolerance window, and legitimate retries look identical. Events carry no
+ * id, so to ignore duplicates store a hash of the raw body (or of the
+ * signature header) for at least the tolerance window and skip repeats.
  */
 export async function constructWebhookEvent(
   options: ConstructWebhookEventOptions,
@@ -108,7 +134,8 @@ export async function constructWebhookEvent(
     return JSON.parse(options.payload) as WebhookEvent;
   } catch (cause) {
     throw new Slant3dWebhookError(
-      `Webhook signature was valid but the body is not valid JSON: ${String(cause)}`,
+      "Webhook signature was valid but the body is not valid JSON",
+      cause,
     );
   }
 }
@@ -129,7 +156,7 @@ function readHeader(
   return "";
 }
 
-async function hmacSha256Hex(secret: string, message: string): Promise<string> {
+async function hmacSha256(secret: string, message: string): Promise<Uint8Array> {
   const encoder = new TextEncoder();
   const key: CryptoKey = await crypto.subtle.importKey(
     "raw",
@@ -143,18 +170,27 @@ async function hmacSha256Hex(secret: string, message: string): Promise<string> {
     key,
     encoder.encode(message),
   );
-  return Array.from(new Uint8Array(digest), (byte) =>
-    byte.toString(16).padStart(2, "0"),
-  ).join("");
+  return new Uint8Array(digest);
 }
 
-function constantTimeEqual(a: string, b: string): boolean {
-  if (a.length !== b.length) {
-    return false;
+/** Decodes `sha256=<64 hex>`; `undefined` when malformed. */
+function decodeSignature(signature: string): Uint8Array | undefined {
+  const hex: string = signature.replace(/^sha256=/, "");
+  if (!/^[0-9a-fA-F]{64}$/.test(hex)) {
+    return undefined;
   }
-  let difference = 0;
+  const bytes = new Uint8Array(32);
+  for (let index = 0; index < 32; index += 1) {
+    bytes[index] = Number.parseInt(hex.slice(index * 2, index * 2 + 2), 16);
+  }
+  return bytes;
+}
+
+/** Compares two equal-length digests without an early exit. */
+function constantTimeEqual(a: Uint8Array, b: Uint8Array): boolean {
+  let difference = a.length ^ b.length;
   for (let index = 0; index < a.length; index += 1) {
-    difference |= a.charCodeAt(index) ^ b.charCodeAt(index);
+    difference |= (a[index] ?? 0) ^ (b[index] ?? 0);
   }
   return difference === 0;
 }

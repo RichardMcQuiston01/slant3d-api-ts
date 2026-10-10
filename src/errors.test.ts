@@ -7,6 +7,7 @@ import {
   Slant3dRateLimitError,
   Slant3dValidationError,
   mapHttpError,
+  parseRetryAfterMs,
 } from "./errors.js";
 
 describe("mapHttpError", () => {
@@ -72,5 +73,36 @@ describe("mapHttpError", () => {
       "/filaments",
     );
     expect(error.message).toBe("Unapproved Profile");
+  });
+});
+
+describe("parseRetryAfterMs", () => {
+  const NOW = Date.parse("2015-10-21T07:00:00Z");
+  const parse = (value: string): number | undefined =>
+    parseRetryAfterMs(new Headers({ "Retry-After": value }), NOW);
+
+  it("parses delta-seconds", () => {
+    expect(parse("5")).toBe(5000);
+    expect(parse("0")).toBe(0);
+  });
+
+  it("parses an HTTP-date relative to now", () => {
+    expect(parse("Wed, 21 Oct 2015 07:28:00 GMT")).toBe(28 * 60 * 1000);
+  });
+
+  it("treats a date in the past as an immediate retry", () => {
+    expect(parse("Wed, 21 Oct 2015 06:00:00 GMT")).toBe(0);
+  });
+
+  it("returns the full delta for huge values; the client clamps it", () => {
+    expect(parse("3000000")).toBe(3_000_000_000);
+  });
+
+  it("ignores negative, non-finite, and unparseable values", () => {
+    expect(parse("-5")).toBeUndefined();
+    expect(parse("Infinity")).toBeUndefined();
+    expect(parse("1".repeat(400))).toBeUndefined();
+    expect(parse("soon")).toBeUndefined();
+    expect(parseRetryAfterMs(new Headers(), NOW)).toBeUndefined();
   });
 });

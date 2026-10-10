@@ -10,6 +10,7 @@ export {
   Slant3dNetworkError,
   Slant3dNotFoundError,
   Slant3dRateLimitError,
+  Slant3dResponseTooLargeError,
   Slant3dTimeoutError,
   Slant3dValidationError,
   Slant3dWebhookError,

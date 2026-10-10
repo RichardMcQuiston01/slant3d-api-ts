@@ -1,5 +1,5 @@
-import { Slant3dApiError, Slant3dNetworkError } from "../errors.js";
-import type { HttpClient } from "../http/httpClient.js";
+import { Slant3dApiError, Slant3dConfigError } from "../errors.js";
+import type { ExternalResponse, HttpClient } from "../http/httpClient.js";
 import type {
   ApiResponse,
   CountedResponse,
@@ -64,10 +64,7 @@ export interface UploadFileRequest extends RequestUploadRequest {
 
 /** File upload, lookup, OpenSCAD conversion, and price estimation. */
 export class FilesResource {
-  constructor(
-    private readonly http: HttpClient,
-    private readonly fetchImpl: typeof fetch,
-  ) {}
+  constructor(private readonly http: HttpClient) {}
 
   /** `GET /files` */
   list(query: ListFilesQuery = {}): Promise<PaginatedResponse<Slant3dFile>> {
@@ -157,24 +154,20 @@ export class FilesResource {
       await this.requestUpload(uploadRequest);
     const { presignedUrl, filePlaceholder } = presigned.data;
 
-    let putResponse: Response;
-    try {
-      putResponse = await this.fetchImpl(presignedUrl, {
-        method: "PUT",
-        body: data as RequestInit["body"],
-      });
-    } catch (cause) {
-      throw new Slant3dNetworkError(
-        `Upload of "${request.name}" to the presigned URL failed before a response was received`,
-        cause,
-      );
-    }
+    assertSafeUploadUrl(presignedUrl, this.http.allowInsecureUploadUrl);
+
+    // No redirects: a 307/308 would resend the file bytes to another host.
+    const putResponse: ExternalResponse = await this.http.fetchExternal(
+      presignedUrl,
+      { method: "PUT", body: data as RequestInit["body"], redirect: "error" },
+      `Upload of "${request.name}" to the presigned URL`,
+    );
     if (!putResponse.ok) {
       throw new Slant3dApiError(
         `Upload of "${request.name}" to the presigned URL failed with status ${putResponse.status}`,
         putResponse.status,
         "presigned-upload",
-        await putResponse.text(),
+        putResponse.bodyPreview,
       );
     }
 
@@ -198,6 +191,39 @@ export class FilesResource {
       "POST",
       `files/${encodeURIComponent(publicFileId)}/estimate`,
       { body: options !== undefined ? { options } : {} },
+    );
+  }
+}
+
+/**
+ * The presigned URL comes from an API response, so check it before sending
+ * the file there: `https:` only (unless explicitly allowed for tests) and no
+ * embedded credentials. The URL is left out of messages because its query
+ * string carries the signature.
+ */
+function assertSafeUploadUrl(
+  presignedUrl: string,
+  allowInsecure: boolean,
+): void {
+  let parsed: URL;
+  try {
+    parsed = new URL(presignedUrl);
+  } catch {
+    throw new Slant3dConfigError(
+      "The API returned a presigned upload URL that is not a valid URL; refusing to upload. Check baseUrl and any proxy in front of the API.",
+    );
+  }
+  const allowed: boolean =
+    parsed.protocol === "https:" ||
+    (parsed.protocol === "http:" && allowInsecure);
+  if (!allowed) {
+    throw new Slant3dConfigError(
+      `The API returned a presigned upload URL using "${parsed.protocol}"; only https: is allowed. Check baseUrl and any proxy in front of the API.`,
+    );
+  }
+  if (parsed.username !== "" || parsed.password !== "") {
+    throw new Slant3dConfigError(
+      "The API returned a presigned upload URL with embedded credentials; refusing to upload. Check baseUrl and any proxy in front of the API.",
     );
   }
 }
