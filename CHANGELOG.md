@@ -1,5 +1,11 @@
 # CHANGELOG
 
+## 0.3.1
+
+### Added
+
+- `funding` field in `package.json` (`npm fund` shows the donate link).
+
 ## 0.3.0
 
 ### Removed (breaking)
