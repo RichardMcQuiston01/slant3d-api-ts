@@ -14,6 +14,10 @@
     "type": "git",
     "url": "git+https://github.com/RichardMcQuiston01/slant3d-api-ts.git"
   },
+  "funding": {
+    "type": "individual",
+    "url": "https://donate.stripe.com/00w5kD3Gj1Xo9v7gVOcs800"
+  },
   "publishConfig": {
     "access": "public"
   },
